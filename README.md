@@ -146,13 +146,3 @@ Graph ID: 76820 | Score: 0.8765
 * General inspiration from transformer-based architectures and representation learning research.
 
 ---
-
-## License
-
-MIT License © \[Your Name]
-
----
-
-## Contributing
-
-Pull requests are welcome! Feel free to open issues or contribute new features (e.g., better re-ranking models, GAT support, batch retrieval).
