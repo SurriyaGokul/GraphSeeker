@@ -1,9 +1,0 @@
-EMBEDDING_DIM: 128  # Dimension of your graph embeddings
-NUM_GRAPHS:  10000   # Total number of graphs in your database
-NUM_QUERY: 5        # Number of example queries to run
-NLIST: 100          # Number of clusters for IVF
-M: 8                # Number of sub-quantizers for PQ
-NBITS: 8            # Number of bits per sub-quantizer code
-TOP_K_CANDIDATES: 100 # Number of candidates to retrieve from Stage 1
-TOP_N_RESULTS: 10   # Final number of results to return after re-ranking
-NPROBE: 10          # Number of IVF cells to visit during search
