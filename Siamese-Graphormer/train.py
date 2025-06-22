@@ -116,15 +116,5 @@ def train():
     print("Training finished.")
     torch.save(siamese_net.state_dict(), "siamese_model.pt")
     torch.save(encoder.state_dict(), "encoder_only.pt")
-    encoder.eval() 
-    full_dataset = dataset[split_idx["train"]]
-    test_dataset =  dataset[split_idx["test"]]
-    embeddings = extract_embeddings(encoder, full_dataset, device)
-    embeddings_test = extract_embeddings(encoder, test_dataset, device) 
-    torch.save(embeddings, "molpcba_embeddings.pt")
-    torch.save(embeddings_test, "molpcba_embeddings_test.pt")
-    np.save("molpcba_embeddings.npy", embeddings.numpy())
-    print("Saved embeddings for FAISS retrieval.")
-
 if __name__ == '__main__':
     train()
