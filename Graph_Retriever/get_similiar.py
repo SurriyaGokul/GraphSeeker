@@ -25,7 +25,7 @@ def get_similar(query_embedding: np.ndarray, k: int = 5):
     faiss.normalize_L2(balanced_embeddings)
 
     # Build index and search
-    system = HybridRetrievalSystem(embedding_dim=EMBEDDING_DIM, training=False)
+    system = HybridRetrievalSystem(embedding_dim=EMBEDDING_DIM, training=False) # Make sure to set training=False for inference
     system.build_index(balanced_embeddings)
 
     # Normalize query
@@ -33,13 +33,13 @@ def get_similar(query_embedding: np.ndarray, k: int = 5):
         query_embedding = query_embedding.reshape(1, -1)
     faiss.normalize_L2(query_embedding)
 
-    indices, distances = system.search(query_embedding)
+    indices, scores = system.search(query_embedding)
     
     print(f"Top {k} similar graphs:")
-    for idx, dist in zip(indices[:k], distances[:k]):
+    for idx, dist in zip(indices[:k], scores[:k]):
         print(f"Graph Index: {idx:<6} | Score: {dist:.4f}")
 
-    return indices[:k], distances[:k]
+    return indices[:k], scores[:k]
 
 
 if __name__ == "__main__":
