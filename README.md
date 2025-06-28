@@ -1,4 +1,4 @@
-# 🚀 **GraphSeeker**
+#  **GraphSeeker**
 
 ### *Scalable Graph Retrieval with Siamese Graph Transformers and GNN-Based Reranking*
 
