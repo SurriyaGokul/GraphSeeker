@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from edge_attention import EdgeConditionedGraphAttention
+
 class GraphTransformerEncoder(nn.Module):
     def __init__(self, in_channels, edge_dim, hidden_channels, out_channels, num_layers=3, num_heads=8):
         super().__init__()

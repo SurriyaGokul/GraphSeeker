@@ -2,10 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from encoder import GraphTransformerEncoder
-from torch_geometric.nn import global_mean_pool
-from torch_geometric.utils import to_dense_batch
-from torch_geometric.utils import add_self_loops
-from torch_scatter import scatter_mean
+
 
 class SiameseGraphNetwork(nn.Module):
     def __init__(self, in_channels, edge_dim, hidden_channels, out_channels, num_layers=3, num_heads=8):
