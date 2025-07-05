@@ -26,13 +26,12 @@ class EdgeConditionedGraphAttention(nn.Module):
         )
 
     def forward(self, x, edge_index, edge_attr):
-        # 1) add self-loops
         edge_index, edge_attr = add_self_loops(edge_index,
                                                edge_attr=edge_attr,
                                                fill_value=0.0)
 
         num_nodes = x.size(0)
-        # 2) project to multi-head q/k/v
+
         q = self.W_q(x).view(num_nodes, self.num_heads, self.head_dim)
         k = self.W_k(x).view(num_nodes, self.num_heads, self.head_dim)
         v = self.W_v(x).view(num_nodes, self.num_heads, self.head_dim)
@@ -42,30 +41,22 @@ class EdgeConditionedGraphAttention(nn.Module):
         k_src = k[src]
         v_src = v[src]
 
-        # 3) incorporate edge features
         edge_e = self.edge_proj(edge_attr).view(-1, self.num_heads, self.head_dim)
 
-        # 4) attention scores & weights
         scores = (q_dst * (k_src + edge_e)).sum(dim=-1) / (self.head_dim ** 0.5)
         alpha  = F.softmax(scores, dim=0)            # over all edges
 
-        # 5) messages
         messages = alpha.unsqueeze(-1) * (v_src + edge_e)  # [E, H, D]
 
-        # 6) sum‐and‐mean by dst index
-        # 6a) sum up messages per destination node
         out_sum = x.new_zeros((num_nodes, self.num_heads, self.head_dim))
         out_sum.index_add_(0, dst, messages)               
 
-        # 6b) count how many messages each dst got
         counts = torch.bincount(dst, minlength=num_nodes).clamp(min=1)
         counts = counts.view(-1, 1, 1).to(out_sum.dtype)
 
-        # 6c) average
         out = out_sum / counts                               # [N, H, D]
         out = out.view(num_nodes, -1)                        # [N, H*D]
 
-        # 7) final projections + residuals
         x = self.norm1(x + self.out_proj(out))
         x = self.norm2(x + self.dropout(self.ffn(x)))
         return x
