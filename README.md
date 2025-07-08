@@ -106,7 +106,6 @@ graph TD
 Scalable_Graph_Retrieval/
   ├── Siamese-Graphormer/
   │   ├── train.py
-  │   ├── generate_embeddings.py
   │   ├── model.py
   │   ├── loss.py
   │   ├── data/
