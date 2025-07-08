@@ -49,7 +49,7 @@ We considered two normalization strategies:
 ### 📊 Normalized `y` Distribution
 
 <div align="center">
-  <img src="assets/output.png" width="650" alt="Normalized y histogram">
+  <img src="assets/normalised.png" width="650" alt="Normalized y histogram">
 </div>
 
 * Over **90% of graphs** lie in the tight band \[**0.85**, **0.97**] after normalization.
