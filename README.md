@@ -1,109 +1,121 @@
+
 # **GraphSeeker**
 
 ### *Scalable Graph Retrieval with Siamese Graph Transformers and GNN-Based Reranking*
+
 [![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with PyTorch](https://img.shields.io/badge/Built%20with-PyTorch-EE4C2C?logo=pytorch)](https://pytorch.org/)
 [![PyTorch Geometric](https://img.shields.io/badge/PyTorch%20Geometric-Framework-brightgreen?logo=github)](https://pytorch-geometric.readthedocs.io/)
-[![Dataset](https://img.shields.io/badge/Dataset-OGB--MolHIV-purple)](https://ogb.stanford.edu/docs/graphprop/)
-[![Project Status](https://img.shields.io/badge/Status-Research--grade-success)]()
-
----
-**GraphSeeker** is a high-performance graph retrieval system engineered for scalability and precision. It integrates a **Siamese Graph Transformer encoder** with a **two-stage hybrid retrieval pipeline**, combining FAISS-based dense retrieval with GNN-based reranking. The result: accurate identification of **structurally and semantically similar graphs** at scale.
+[![Dataset](https://img.shields.io/badge/Dataset-ZINC-lightblue)](https://pytorch-geometric.readthedocs.io/en/latest/modules/datasets.html#torch_geometric.datasets.ZINC)
+[![Project Status](https://img.shields.io/badge/Status-Actively%20Developed-success)]()
 
 ---
 
-##  Key Features
+**GraphSeeker** is a high-performance **graph retrieval framework** powered by **Siamese Graph Transformers** and a **two-stage reranking pipeline**. Designed with **scalability, interpretability**, and **search precision** in mind, it is ideal for use cases like **molecular similarity**, **semantic graph search**, and **graph clustering**.
 
-###  **Siamese Graph Transformer Encoder**
 
-A dual-branch transformer architecture trained via **contrastive learning** to produce rich, discriminative **graph-level embeddings**.
+## 🧪 Exploratory Data Analysis on ZINC
 
-* **Edge-Conditioned Attention**
-  Incorporates edge attributes into the attention mechanism to capture **node–edge–subgraph** interactions.
-
-* **Virtual Node for Global Context**
-  Adds a learnable **virtual token** to each graph to represent global structure in a **size-invariant** manner.
-
-* **Pairwise Contrastive Training**
-  Trained using **contrastive loss**, robust to class imbalance—ideal for tasks like **retrieval**, **matching**, and **clustering**.
-
-* **Task-Agnostic Embeddings**
-  Embeddings can be transferred to a wide range of downstream tasks with **minimal fine-tuning**, including **few-shot classification** and **unsupervised clustering**.
+Before diving into contrastive training, we performed an in-depth analysis of the **ZINC dataset’s `y` values** (graph-level regression targets). This analysis was **crucial** in designing a **balanced sampling strategy** and choosing an optimal margin for positive and negative graph pairs.
 
 ---
 
-###  **Graph Retrieval Pipeline**
+### 🧼 Raw `y` Distribution (Unnormalized)
 
-####  FAISS-Based Approximate Nearest Neighbor Search (IVF + PQ)
+<div align="center">
+  <img src="assets/raw.png" width="650" alt="Original y distribution">
+</div>
 
-* Scales to **tens of thousands** of graph embeddings with sublinear retrieval time
-* Utilizes `IVF` (Inverted File Indexing) and `PQ` (Product Quantization) for fast, memory-efficient similarity search
-* Tunable parameters (`NLIST`, `NBITS`, `NPROBE`) allow for customizable **speed/recall trade-offs**
-* Supports optional **L2 normalization** for cosine similarity
-
----
-
-####  Cross-Encoder GNN Reranker
-
-* **Reranks top-K FAISS candidates** using a GNN-based cross-encoder
-* Merges query and candidate into a **joint graph** with **cross-edges**
-* Applies **message passing** and **graph-level pooling** for final scoring
-* Designed with **balanced supervision** to address dataset imbalance
+* The `y` values are **highly concentrated** in the range \~\[1.5, 5.5], with a **long tail** on the lower side.
+* Such skewed distributions **bias random sampling**, making it **unlikely** to form **semantically meaningful positive/negative pairs**.
 
 ---
 
-####  Dynamic Joint Graph Construction
+### 🔁 Why Min-Max Normalization?
 
-* Dynamically merges graphs during inference with **inter-graph edges**
-* Captures **fine-grained structural similarities** across graphs
-* Enables reranker to exploit **both local substructures and global context**
+We considered two normalization strategies:
+
+| Method            | Description                                                       | Outcome                                                                                         |
+| ----------------- | ----------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| **Z-score (std)** | $y' = \frac{y - \mu}{\sigma}$                                     | Not effective: retained outliers and spread values beyond \[-3, 3], making delta tuning harder. |
+| ✅ **Min-Max**     | $y' = \frac{y - y_{\text{min}}}{y_{\text{max}} - y_{\text{min}}}$ | Bounded in \[0, 1], helped make **distance thresholds interpretable and tunable**.              |
+
+> 🔬 **Conclusion:** We adopted **min-max normalization** to ensure a **bounded**, **interpretable** and **contrast-friendly** space for similarity computation.
 
 ---
 
-##  Architecture Overview
+### 📊 Normalized `y` Distribution
 
+<div align="center">
+  <img src="assets/output.png" width="650" alt="Normalized y histogram">
+</div>
+
+* Over **90% of graphs** lie in the tight band \[**0.85**, **0.97**] after normalization.
+* We empirically chose `delta = 0.02` to create:
+
+  * Sufficient **positive pairs** (`|y1 - y2| < delta`)
+  * Reliable **negative pairs** (`|y1 - y2| ≥ delta`)
+
+This normalization + delta selection dramatically **improved contrastive loss signal** and helped the model differentiate similar vs. dissimilar graphs much better.
+
+## ✨ Core Highlights
+
+### 🧠 **Siamese Graph Transformer Encoder**
+
+* **Edge-Conditioned Attention**: Integrates edge features into attention for capturing rich **node–edge–subgraph** interactions.
+* **Virtual Global Token**: Adds a learnable node to summarize **global context**, enabling **graph-size invariance**.
+* **Contrastive Pairwise Training**: Learns fine-grained similarities via **NT-Xent loss**, tailored for **retrieval and ranking**.
+* **Task-Agnostic Embeddings**: Generalizes well to **clustering**, **few-shot learning**, and **open-ended graph similarity** tasks.
+
+---
+
+## 🔍 Retrieval Pipeline
+
+### 🚀 Stage 1: FAISS-Based ANN Search
+
+* Uses **IVF (Inverted File Indexing)** and **PQ (Product Quantization)** to perform **sub-linear retrieval** over large corpora.
+* Supports custom **speed/accuracy** tuning with `NLIST`, `NBITS`, and `NPROBE`.
+
+### 🤖 Stage 2: Cross-Encoder GNN Reranker
+
+* Builds a **joint supergraph** from query and candidates with **dynamic inter-graph edges**.
+* Applies **message passing** and **global pooling** to refine similarity scores.
+* Handles **distributional skew** with **balanced contrastive supervision**.
+
+---
+
+## 🧱 System Architecture
+
+```mermaid
+graph TD
+    A[Query Graph] --> B[Siamese Graph Transformer Encoder]
+    B --> C[Graph-Level Embedding]
+    C --> D[FAISS IVF+PQ ANN Retrieval]
+    D --> E[Top-K Candidate Graphs]
+    E --> F[Cross-Encoder GNN Reranker]
+    F --> G[Final Ranked Results]
 ```
-Query Graph
-    |
-    v
-[Siamese Graph Transformer Encoder]
-    |
-    v
-Graph-Level Embedding
-    |
-    v
-[FAISS IVF+PQ ANN Retrieval]
-    |
-    v
-Top-K Candidate Graphs
-    |
-    v
-[Cross-Encoder GNN Reranker]
-    |
-    v
-Final Ranked Results
-```
 
 ---
 
-## 📂 Project Structure
+## 📁 Project Structure
 
 ```
 Scalable_Graph_Retrieval/
   ├── Siamese-Graphormer/
-  │   ├── generate_embeddings.py
-  │   ├── loss.py
-  │   ├── model.py
   │   ├── train.py
+  │   ├── generate_embeddings.py
+  │   ├── model.py
+  │   ├── loss.py
   │   ├── data/
   │   │   └── dataset.py
   │   ├── loss/
   │   │   └── loss.py
   │   └── network/
-  │       ├── edge_attention.py
+  │       ├── siamese.py
   │       ├── encoder.py
-  │       └── siamese.py
+  │       └── edge_attention.py
   ├── Graph_Retriever/
   │   ├── get_similiar.py
   │   ├── train_re_ranker.py
@@ -120,35 +132,47 @@ Scalable_Graph_Retrieval/
 
 ---
 
-## ⚡ Quickstart
+## ⚙️ Quickstart
+
+### Step 1: Train the Siamese Graph Transformer
 
 ```bash
-# 1. Train the Siamese Graph Transformer and generate graph embeddings
+cd Siamese-Graphormer
 python train.py
+```
 
-# 2. Build the FAISS index and perform hybrid retrieval with GNN-based reranking
-python Graph_Retriever/get_similiar.py
+### Step 2: Run Hybrid Retrieval with Reranker
+
+```bash
+cd ../Graph_Retriever
+python get_similiar.py
 ```
 
 ---
 
-## 📊 Dataset
+---
 
-* Utilizes the **OGB-MolHIV** benchmark for supervised training
-* Easily adaptable to any graph classification dataset with **graph-level labels**
+## 🧠 Dataset
+
+* Training: [`ZINC`](https://pytorch-geometric.readthedocs.io/en/latest/modules/datasets.html#torch_geometric.datasets.ZINC)
+* Contrastive targets: Graph-level regression values (`y`)
+* Fully normalized for stability and better sampling
 
 ---
 
-## 🤝 Contributing
+## 🤝 Contributions Welcome
 
-We welcome contributions!
-Feel free to open issues or submit PRs to extend **GraphSeeker** to new graph domains, benchmarks, or retrieval strategies.
+We’re actively seeking improvements and collaborators!
+
+Ideas for contribution:
+
+* Add new **encoder variants** (e.g., GraphormerV2, SAN).
+* Extend to **multi-query retrieval** or **zero-shot settings**.
+* Benchmark on datasets like **ZINC**, **QM9**, or **ogbg-molpcba**.
 
 ---
 
-## 📄 License
+## 📜 License
 
-Distributed under the **MIT License**.
-
----
+Licensed under the **MIT License**. See the `LICENSE` file for full terms.
 
