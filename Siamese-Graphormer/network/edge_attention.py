@@ -27,9 +27,9 @@ class EdgeConditionedGraphAttention(nn.Module):
         )
 
     def forward(self, x, edge_index, edge_attr):
-        edge_index, edge_attr = add_self_loops(edge_index,
-                                               edge_attr=edge_attr,
-                                               fill_value=0.0)
+        if edge_attr is not None:
+            fill_value = torch.zeros(edge_attr.size(-1), device=edge_attr.device)
+            edge_index, edge_attr = add_self_loops(edge_index, edge_attr, fill_value=fill_value)
 
         num_nodes = x.size(0)
        
@@ -52,15 +52,13 @@ class EdgeConditionedGraphAttention(nn.Module):
         out_sum = x.new_zeros((num_nodes, self.num_heads, self.head_dim))
         out_sum.index_add_(0, dst, messages)               
 
-        # 6b) count how many messages each dst got
         counts = torch.bincount(dst, minlength=num_nodes).clamp(min=1)
         counts = counts.view(-1, 1, 1).to(out_sum.dtype)
 
-        # 6c) sum
-        out = out_sum                          # [N, H, D]
-        out = out.view(num_nodes, -1)                        # [N, H*D]
+        out = out_sum/counts                         
+        out = out.view(num_nodes, -1)                        
 
-        # 7) final projections + residuals
         x = self.norm1(x + self.out_proj(out))
         x = self.norm2(x + self.dropout(self.ffn(x)))
+        
         return x
