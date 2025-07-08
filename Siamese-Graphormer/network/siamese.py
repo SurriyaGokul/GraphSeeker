@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from encoder import GraphTransformerEncoder
+from .encoder import GraphTransformerEncoder
 
 
 class SiameseGraphNetwork(nn.Module):
