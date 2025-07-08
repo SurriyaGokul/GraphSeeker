@@ -1,4 +1,3 @@
-
 # **GraphSeeker**
 
 ### *Scalable Graph Retrieval with Siamese Graph Transformers and GNN-Based Reranking*
@@ -89,6 +88,16 @@ The NT-Xent loss **steadily decreases**, indicating stable convergence during co
 
 ---
 
+## 📈 Positive Similarity Curve
+
+<p align="center">
+  <img src="assets/pos_sim.png" alt="Positive Similarity Curve" width="600"/>
+</p>
+
+The average cosine similarity between positive graph pairs **increased consistently during training**, eventually reaching a value of **0.97**, indicating highly aligned latent embeddings for augmented versions of the same graph.
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -116,7 +125,8 @@ GraphSeeker/
 │       ├── hybrid_retrieval.py
 │       └── re_ranker.py
 └── assets/
-    └── loss_curve.png
+    ├── loss_curve.png
+    └── pos_sim_curve.png
 ```
 
 ---
@@ -163,6 +173,7 @@ python get_similiar.py
 We log the following metrics:
 
 * 📉 NT-Xent **contrastive loss**
+* 📈 Average **positive similarity** (final value: **0.96**)
 
 For deeper monitoring, integrate with **TensorBoard** or **Weights & Biases**.
 
