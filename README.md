@@ -14,9 +14,9 @@
 
 **GraphSeeker** is a high-performance **graph retrieval framework** built on **Siamese Graph Transformers** and a **two-stage GNN-based reranking pipeline**. It is designed for applications in:
 
-- 🔬 Molecular similarity
-- 🔎 Semantic graph search
-- 🧩 Graph clustering
+-  Molecular similarity
+-  Semantic graph search
+-  Graph clustering
 
 with a focus on **scalability**, **generalizability**, and **robust contrastive learning**.
 
@@ -31,8 +31,8 @@ We employ **in-batch contrastive learning** with the **NT-Xent loss**, inspired 
 - Every graph `G` is paired with a stochastically augmented copy → `(G₁, G₂)`
 - These form **positive pairs**; all others in the batch are treated as **negatives**
 - Augmentations used:
-  - 🔹 **DropEdge** — randomly removes edges
-  - 🔹 **FeatureMasking** — masks node features
+  - **DropEdge** — Randomly removes edges
+  - **FeatureMasking** — Masks node features
 
 > This strategy eliminates the need for manual positive/negative sampling and supports out-of-the-box generalization across datasets.
 
