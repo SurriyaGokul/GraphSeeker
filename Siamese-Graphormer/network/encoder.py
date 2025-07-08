@@ -19,40 +19,34 @@ class GraphTransformerEncoder(nn.Module):
         self.output_proj = nn.Linear(hidden_channels, out_channels)
 
     def forward(self, x, edge_index, edge_attr, batch):
+        x = self.input_proj(x)
 
-      x = self.input_proj(x)
+        if edge_attr is not None and edge_attr.dim() == 1:
+            edge_attr = edge_attr.unsqueeze(-1)
 
-      # Fix edge_attr: make sure it's 2D (Specifically for Zinc Dataset)
-      if edge_attr is not None and edge_attr.dim() == 1:
-          edge_attr = edge_attr.unsqueeze(-1)
+        batch_size = batch.max().item() + 1
+        virtual = self.virtual_token.repeat(batch_size, 1)
+        x = torch.cat([x, virtual], dim=0)
 
-      # Append virtual node
-      batch_size = batch.max().item() + 1
-      virtual = self.virtual_token.repeat(batch_size, 1)
-      x = torch.cat([x, virtual], dim=0)
+        virtual_index = torch.arange(x.size(0) - batch_size, x.size(0), device=x.device)
 
-      # Virtual indices
-      virtual_index = torch.arange(
-          x.size(0) - batch_size, x.size(0), device=x.device
-      )
-      new_edge_index = torch.cat([
-          edge_index,
-          torch.stack([
-              virtual_index.repeat_interleave(batch.bincount()),
-              torch.arange(len(batch), device=x.device)
-          ])
-      ], dim=1)
+        repeated_virtual = virtual_index.repeat_interleave(batch.bincount())
+        all_nodes = torch.arange(len(batch), device=x.device)
+        virtual_edges = torch.stack([repeated_virtual, all_nodes], dim=0)
 
-      # Append zero edge attributes for virtual edges
-      zero_virtual_edge_attr = torch.zeros(
-          len(batch), edge_attr.size(-1), device=edge_attr.device
-      )
-      new_edge_attr = torch.cat([edge_attr, zero_virtual_edge_attr], dim=0)
+        new_edge_index = torch.cat([edge_index, virtual_edges], dim=1)
 
-      # Append batch for virtual tokens
-      batch = torch.cat([batch, torch.arange(batch_size, device=batch.device)])
+        reversed_edge_index = torch.stack([new_edge_index[1], new_edge_index[0]], dim=0)
+        new_edge_index = torch.cat([new_edge_index, reversed_edge_index], dim=1)
 
-      for layer in self.layers:
-          x = layer(x, new_edge_index, new_edge_attr)
+        zero_virtual_edge_attr = torch.zeros(virtual_edges.size(1), edge_attr.size(-1), device=edge_attr.device)
 
-      return self.output_proj(x[-batch_size:])  # Return only virtual token outputs
+        new_edge_attr = torch.cat([edge_attr, zero_virtual_edge_attr], dim=0)
+        new_edge_attr = torch.cat([new_edge_attr, new_edge_attr.clone()], dim=0)
+
+        batch = torch.cat([batch, torch.arange(batch_size, device=batch.device)])
+
+        for layer in self.layers:
+            x = layer(x, new_edge_index, new_edge_attr)
+
+        return self.output_proj(x[-batch_size:])
