@@ -81,7 +81,7 @@ graph TD
 ## 📉 Training Loss Curve
 
 <p align="center">
-  <img src="assets/loss_curve.png" alt="Training Loss Curve" width="600"/>
+  <img src="assets/loss_curve_final.png" alt="Training Loss Curve" width="600"/>
 </p>
 
 The NT-Xent loss **steadily decreases**, indicating stable convergence during contrastive pretraining.
