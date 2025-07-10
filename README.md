@@ -94,7 +94,7 @@ The NT-Xent loss **steadily decreases**, indicating stable convergence during co
   <img src="assets/pos_sim.png" alt="Positive Similarity Curve" width="600"/>
 </p>
 
-The average cosine similarity between positive graph pairs **increased consistently during training**, eventually reaching a value of **0.97**, indicating highly aligned latent embeddings for augmented versions of the same graph.
+The average cosine similarity between positive graph pairs **increased consistently during training**, eventually reaching a value of **0.96**, indicating highly aligned latent embeddings for augmented versions of the same graph.
 
 ---
 
