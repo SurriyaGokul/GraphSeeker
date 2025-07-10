@@ -97,6 +97,15 @@ The NT-Xent loss **steadily decreases**, indicating stable convergence during co
 The average cosine similarity between positive graph pairs **increased consistently during training**, eventually reaching a value of **0.97**, indicating highly aligned latent embeddings for augmented versions of the same graph.
 
 ---
+## 🏁 Benchmark Comparison
+
+<p align="center">
+  <img src="assets/benchmark.png" alt="Benchmark Table" width="600"/>
+</p>
+
+We compare our model's performance on contrastive pretraining with other popular GNN backbones using **NT-Xent loss** and **average cosine similarity between positive pairs**. As shown, our method outperforms all baselines with a significantly lower loss and higher similarity alignment.
+
+---
 
 ## 📁 Project Structure
 
