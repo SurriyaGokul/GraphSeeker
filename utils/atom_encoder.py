@@ -6,6 +6,4 @@ class SimpleAtomEncoder(nn.Module):
         self.emb = nn.Embedding(num_embeddings, emb_dim)
 
     def forward(self, x):
-        return self.emb(x.squeeze(-1).long())  
-
-atom_encoder = SimpleAtomEncoder(emb_dim=64)  
+        return self.emb(x.squeeze(-1).long()) 

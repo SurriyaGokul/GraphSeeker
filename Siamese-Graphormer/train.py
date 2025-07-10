@@ -1,31 +1,43 @@
+import os
+import random
+import copy
+import pickle
+
+import numpy as np
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+from sklearn.manifold import TSNE
+from sklearn.metrics import roc_auc_score
+
 import torch
+import torch.nn as nn
 import torch.optim as optim
+import torch.nn.functional as F
+from torch.utils.data import DataLoader
+
 from torch_geometric.datasets import ZINC
 from torch_geometric.data import Batch
-from torch.utils.data import DataLoader
+from torch_geometric.nn.models import GIN
+
 from network.siamese import SiameseGraphNetwork
-from loss.loss import improved_contrastive_loss,nt_xent_loss
-from tqdm import tqdm
-import random
-import os
-import numpy as np
-import torch.nn as nn
-import torch.nn.functional as F
-import random
+from loss.loss import improved_contrastive_loss, nt_xent_loss
+from utils.atom_encoder import SimpleAtomEncoder
+from utils.augment import drop_edges, feature_mask
 from utils.collate import balanced_siamese_collate
-from atom_encoder import atom_encoder   
+from utils.visualization import visualize_embeddings, plot_metrics
+
+device = torch.device("cuda")
+atom_encoder = SimpleAtomEncoder(emb_dim=64).to(device)
 
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
-def train(epochs=1, lr=2e-3, batch_size=256, embeddings_dim=512):
+def train(epochs=10, lr=2e-3, batch_size=256, embeddings_dim=512):
     random.seed(42)
     os.makedirs("checkpoints", exist_ok=True)
     os.makedirs("embeddings", exist_ok=True)
 
     siamese_net = SiameseGraphNetwork(
-        in_channels=64,      
-        edge_dim=5,             # ← one-hot bond type
+        in_channels=64,
+        edge_dim=5,
         hidden_channels=256,
         out_channels=embeddings_dim
     ).to(device)
@@ -39,28 +51,25 @@ def train(epochs=1, lr=2e-3, batch_size=256, embeddings_dim=512):
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
-        num_workers=2,
+        num_workers=0,
         drop_last=True,
         collate_fn=balanced_siamese_collate
     )
 
+    losses, pos_sims_epoch, neg_sims_epoch, aucs = [], [], [], []
+
     for epoch in range(1, epochs + 1):
         siamese_net.train()
         total_loss = 0.0
-        all_labels = []
-        all_sims = []
+        all_labels, all_sims = [], []
 
         loop = tqdm(loader, desc=f"Epoch {epoch}/{epochs}", leave=False)
         for batch1, batch2, label in loop:
-            batch1 = batch1.to(device)
-            batch2 = batch2.to(device)
-            label = label.to(device)
+            batch1, batch2, label = batch1.to(device), batch2.to(device), label.to(device)
 
             out1, out2 = siamese_net(batch1, batch2)
             out1 = F.normalize(out1, p=2, dim=1)
             out2 = F.normalize(out2, p=2, dim=1)
-            print("Out1 mean:", out1.mean().item(), "std:", out1.std().item())
-            print("Out2 mean:", out2.mean().item(), "std:", out2.std().item())
 
             sims = F.cosine_similarity(out1, out2)
             pos_sims = sims[label == 1]
@@ -78,19 +87,30 @@ def train(epochs=1, lr=2e-3, batch_size=256, embeddings_dim=512):
 
             loop.set_postfix(
                 loss=loss.item(),
-                pos_sim=pos_sims.mean().item() if len(pos_sims) > 0 else 0,
-                neg_sim=neg_sims.mean().item() if len(neg_sims) > 0 else 0
+                pos_sim=pos_sims.mean().item() if len(pos_sims) else 0,
+                neg_sim=neg_sims.mean().item() if len(neg_sims) else 0
             )
 
         avg_loss = total_loss / len(loader)
+        avg_pos = np.mean([x for i, x in enumerate(all_sims) if all_labels[i] == 1])
+        avg_neg = np.mean([x for i, x in enumerate(all_sims) if all_labels[i] == 0])
 
-        print(f"\nEpoch {epoch}: Avg Loss = {avg_loss:.4f}, AUC = {auc_score:.4f}")
-        print(f"  Final avg pos sim = {pos_sims.mean():.4f}, avg neg sim = {neg_sims.mean():.4f}")
-        print(f"  Grad Norm = {grad_norm:.4f}")
+        losses.append(avg_loss)
+        pos_sims_epoch.append(avg_pos)
+        neg_sims_epoch.append(avg_neg)
+
+        print(f"\nEpoch {epoch}:")
+        print(f"Avg Positive Similarity = {avg_pos:.4f}")
+        print(f"Avg Negative Similarity = {avg_neg:.4f}")
+        print(f"Gradient Norm = {grad_norm:.4f}")
 
     # Save Model
     torch.save(siamese_net.state_dict(), "checkpoints/siamese_final.pt")
-    print("Model weights saved at checkpoints/siamese_final.pt")
+    print("\n Model saved at checkpoints/siamese_final.pt")
+
+    # Save Metrics Plot
+    plot_metrics(losses, pos_sims_epoch, neg_sims_epoch, aucs)
+    print("Training curve saved at checkpoints/training_metrics.png")
 
     # Save Embeddings
     siamese_net.eval()
@@ -104,13 +124,23 @@ def train(epochs=1, lr=2e-3, batch_size=256, embeddings_dim=512):
         )
         for i, graph in tqdm(enumerate(full_loader), total=len(train_dataset), desc="Generating Embeddings"):
             graph = graph.to(device)
-            graph.x = atom_encoder(graph.x.squeeze().long()) 
-            graph.edge_attr = F.one_hot(graph.edge_attr.squeeze().long(), num_classes=5).float()
+            graph.x = atom_encoder(graph.x.squeeze().long()).to(device)
+            graph.edge_attr = F.one_hot(graph.edge_attr.squeeze().long(), num_classes=5).float().to(device)
             embedding = siamese_net.encoder(graph.x, graph.edge_index, graph.edge_attr, graph.batch)
-            embedding_dict[i] = embedding.squeeze().cpu().numpy()
+            embedding_dict[i] = {
+            "embedding": embedding.squeeze().cpu().numpy(),
+            "label": graph.y.item()  
+        }
 
-    np.save("embeddings/train_graph_embeddings.npy", embedding_dict)
-    print("Graph embeddings saved at embeddings/train_graph_embeddings.npy")
 
-if __name__=="__main__":
+    with open("embeddings/train_graph_embeddings.pkl", "wb") as f:
+        pickle.dump(embedding_dict, f)
+    print("Embeddings saved at embeddings/train_graph_embeddings.npy")
+
+    # Visualize t-SNE
+    visualize_embeddings(embedding_dict)
+    print("t-SNE saved at embeddings/tsne.png")
+
+
+if __name__ == "__main__":
     train()

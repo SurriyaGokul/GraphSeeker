@@ -32,7 +32,7 @@ class HybridRetrievalSystem:
         self.re_ranker = CrossEncoderGNN(embedding_dim)
         self.re_ranker.eval()
         self.db_embeddings = None
-        self.graphs = load_graph_dataset()  # Load graph data objects
+        self.graphs = load_graph_dataset() 
         if not training:
             self.reranker.load_state_dict(torch.load("/content/Graph_Retriever/reranker.pth", map_location='cpu'))
 

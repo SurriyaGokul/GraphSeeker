@@ -5,28 +5,43 @@ from augment import drop_edges, feature_mask
 from torch_geometric.data import Batch
 import torch
 import torch.nn.functional as F
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 def balanced_siamese_collate(batch, delta=0.02):
-    pairs = []
-    num_samples = len(batch)
+    g1_list, g2_list, labels = [], [], []
 
     for g in batch:
-        g.x = atom_encoder(g.x.squeeze().long()).detach()
-        g.edge_attr = F.one_hot(g.edge_attr.squeeze().long(), num_classes=5).float().detach()
+        original_x = g.x.squeeze().long().to(device)
+        original_edge_attr = g.edge_attr.squeeze().long().to(device)
+        original_edge_index = g.edge_index.to(device)
+        if hasattr(g, 'batch') and g.batch is not None:
+            original_batch = g.batch.to(device)
+        else:
+            original_batch = torch.zeros(g.num_nodes, dtype=torch.long).to(device)
 
-    for _ in range(num_samples):
-        g1 = random.choice(batch)
-        g2 = copy.deepcopy(g1)
+        # First augmentation
+        g1 = Batch(
+            x=atom_encoder(original_x).detach(),
+            edge_attr=F.one_hot(original_edge_attr, num_classes=5).float().detach(),
+            edge_index=original_edge_index.clone(),
+            batch=original_batch
+        )
+        g1.edge_index, g1.edge_attr = drop_edges(g1.edge_index, g1.edge_attr, p=0.2)
+        g1.x = feature_mask(g1.x, p=0.1)
 
-        # Apply augmentations
-        for g in [g1, g2]:
-            g.edge_index, g.edge_attr = drop_edges(g.edge_index, g.edge_attr, p=0.2)
-            g.x = feature_mask(g.x, p=0.1)
+        # Second augmentation
+        g2 = Batch(
+            x=atom_encoder(original_x).detach(),
+            edge_attr=F.one_hot(original_edge_attr, num_classes=5).float().detach(),
+            edge_index=original_edge_index.clone(),
+            batch=original_batch
+        )
+        g2.edge_index, g2.edge_attr = drop_edges(g2.edge_index, g2.edge_attr, p=0.2)
+        g2.x = feature_mask(g2.x, p=0.1)
 
-        pairs.append((g1, g2, torch.tensor(1.0)))  # Always positive in NT-Xent
+        g1_list.append(g1)
+        g2_list.append(g2)
+        labels.append(torch.tensor(1.0, device=device))  # Now directly on GPU
 
-    g1_list, g2_list, labels = zip(*pairs)
-    batch1 = Batch.from_data_list(g1_list)
-    batch2 = Batch.from_data_list(g2_list)
-    labels = torch.stack(labels)
-    return batch1, batch2, labels
+    return Batch.from_data_list(g1_list), Batch.from_data_list(g2_list), torch.stack(labels)
+
