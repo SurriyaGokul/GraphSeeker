@@ -81,9 +81,6 @@ class HybridRetrievalSystem:
         return index
 
     def search_and_rerank(self, num_queries=100):
-        recall = 0
-        mrr = 0
-        ranks = []
 
         for i in tqdm(range(num_queries), desc="🔍 Querying and Re-ranking"):
             q_emb = self.embeddings[i].reshape(1, -1)
