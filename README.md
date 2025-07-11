@@ -1,70 +1,93 @@
-# **GraphSeeker**
 
-### *Scalable Graph Retrieval with Siamese Graph Transformers and GNN-Based Reranking*
+
+#  **GraphSeeker**
+
+### *Scalable Graph Retrieval via Siamese Graph Transformers & GNN-Based Reranking*
 
 [![Python Version](https://img.shields.io/badge/Python-3.8%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Built with PyTorch](https://img.shields.io/badge/Built%20with-PyTorch-EE4C2C?logo=pytorch)](https://pytorch.org/)
 [![PyTorch Geometric](https://img.shields.io/badge/PyTorch%20Geometric-Framework-brightgreen?logo=github)](https://pytorch-geometric.readthedocs.io/)
-[![Dataset](https://img.shields.io/badge/Dataset-ZINC-lightblue)](https://pytorch-geometric.readthedocs.io/en/latest/modules/datasets.html#torch_geometric.datasets.ZINC)
+[![Dataset: ZINC](https://img.shields.io/badge/Dataset-ZINC-lightblue)](https://pytorch-geometric.readthedocs.io/en/latest/modules/datasets.html#torch_geometric.datasets.ZINC)
 [![Project Status](https://img.shields.io/badge/Status-Actively%20Developed-success)]()
 
 ---
 
-**GraphSeeker** is a high-performance **graph retrieval framework** built on **Siamese Graph Transformers** and a **two-stage GNN-based reranking pipeline**. It is designed for applications in:
+**GraphSeeker** is a high-performance graph retrieval framework that combines the power of **Siamese Graph Transformers** with a **GNN-based reranking module**. Designed for **scalability**, **generalizability**, and **semantic retrieval**, it excels at tasks such as:
 
--  Molecular similarity
--  Semantic graph search
--  Graph clustering
+* 🔬 **Molecular similarity search**
+* 🔗 **Semantic graph alignment**
+* 📈 **Structure-based graph clustering**
 
-with a focus on **scalability**, **generalizability**, and **robust contrastive learning**.
-
----
-
-## 🧪 Contrastive Pretraining with Augmentations
-
-We employ **in-batch contrastive learning** with the **NT-Xent loss**, inspired by SimCLR.
-
-**Training Strategy:**
-
-- Every graph `G` is paired with a stochastically augmented copy → `(G₁, G₂)`
-- These form **positive pairs**; all others in the batch are treated as **negatives**
-- Augmentations used:
-  - **DropEdge** — Randomly removes edges
-  - **FeatureMasking** — Masks node features
-
-> This strategy eliminates the need for manual positive/negative sampling and supports out-of-the-box generalization across datasets.
+With robust contrastive learning at its core, GraphSeeker provides **accurate**, **explainable**, and **fast** retrieval even in large-scale graph collections.
 
 ---
 
-## ✨ Model Overview
+## 🧠 Core Idea: Contrastive Learning with Structural Augmentations
 
-### 🧠 Siamese Graph Transformer Encoder
+Inspired by SimCLR, our contrastive training uses **NT-Xent Loss** and relies on augmented graph pairs:
 
-- **Edge-Conditioned Attention**: Injects edge features directly into the attention weights
-- **Global Token**: Learnable node for graph-level representation
-- **Augmentation-Aware Training**: Learns structure-invariant representations
-- **Task-Agnostic Embeddings**: Suitable for retrieval, clustering, and few-shot tasks
+* Each graph `G` is augmented to produce `(G₁, G₂)` → positive pair
+* All other graphs in batch → negative examples
+* **Augmentations used**:
 
----
+  * 🔁 **DropEdge** – Random edge removal
+  * 🎭 **FeatureMasking** – Random feature dropout
 
-## 🔍 Two-Stage Retrieval Pipeline
-
-### 🚀 Stage 1: FAISS-Based ANN Retrieval
-
-- **Fast approximate nearest neighbor** retrieval
-- Based on **IVF+PQ indexing**
-- Tunable parameters for accuracy-speed tradeoff: `NLIST`, `NBITS`, `NPROBE`
-
-### 🤖 Stage 2: GNN-Based Reranker
-
-- Constructs a **supergraph** from the query and retrieved candidates
-- Uses a **cross-encoder GNN** for joint representation learning
-- Trained with contrastive supervision (extendable to true relevance labels)
+This allows the encoder to learn **structure-invariant**, task-agnostic representations without manual supervision.
 
 ---
 
-## 🧱 System Architecture
+## 📊 ZINC Dataset Analysis
+
+We performed exploratory analysis on the **ZINC dataset** to select an appropriate semantic margin Δ for reranking.
+
+<p align="center">
+  <img src="assets/normalised.png" alt="Normalized Y Histogram" width="600"/>
+</p>
+
+Key insights:
+
+* Target `y` values are tightly clustered near **1.0**, with **left-skewed** distribution.
+* Even small `Δy` changes imply significant **chemical or structural difference**.
+
+→ We chose **Δ = 0.05** to define similarity during reranking:
+
+* ✅ Graphs with |Δy| < 0.05 → similar
+* ❌ Graphs with |Δy| ≥ 0.05 → dissimilar
+
+This careful margin tuning aligns **latent space similarity** with **target behavior**, enhancing downstream retrieval.
+
+---
+
+## ✨ Architecture Overview
+
+### 🧬 Siamese Graph Transformer Encoder
+
+* **Edge-aware attention**: edge features modulate attention scores
+* **Global token**: learnable graph-level summary vector
+* **Augmentation-aware**: trained to ignore noise
+* **Universal embeddings**: transferable to retrieval, clustering, and classification
+
+---
+
+### 🔍 Two-Stage Graph Retrieval Pipeline
+
+**Stage 1: FAISS-Based ANN Search**
+
+* Utilizes **IVF+PQ indexing**
+* Highly scalable and tunable
+* Retrieves **top-K** candidates efficiently
+
+**Stage 2: Cross-Attention GNN Reranker**
+
+* Builds a supergraph of query + retrieved graphs
+* Uses **joint message passing** with contrastive loss
+* Learns to semantically refine candidate scores
+
+---
+
+## 🧱 System Pipeline Diagram
 
 ```mermaid
 graph TD
@@ -74,40 +97,44 @@ graph TD
     D --> E[Top-K Candidate Graphs]
     E --> F[Cross-Encoder GNN Reranker]
     F --> G[Final Ranked Results]
-````
+```
 
 ---
 
-## 📉 Training Loss Curve
+## 📉 Training Stability
+
+**Loss Curve:**
 
 <p align="center">
   <img src="assets/loss_curve_final.png" alt="Training Loss Curve" width="600"/>
 </p>
 
-The NT-Xent loss **steadily decreases**, indicating stable convergence during contrastive pretraining.
-
----
-
-## 📈 Positive Similarity Curve
+**Positive Pair Similarity:**
 
 <p align="center">
   <img src="assets/pos_sim.png" alt="Positive Similarity Curve" width="600"/>
 </p>
 
-The average cosine similarity between positive graph pairs **increased consistently during training**, eventually reaching a value of **0.96**, indicating highly aligned latent embeddings for augmented versions of the same graph.
-
----
-## 🏁 Benchmark Comparison
-
-<p align="center">
-  <img src="assets/benchmark.png" alt="Benchmark Table" width="600"/>
-</p>
-
-We compare our model's performance on contrastive pretraining with other popular GNN backbones using **NT-Xent loss** and **average cosine similarity between positive pairs**. As shown, our method outperforms all baselines with a significantly lower loss and higher similarity alignment.
+* NT-Xent loss steadily decreased
+* Cosine similarity between positives reached **0.96**, showing strong alignment
 
 ---
 
-## 📁 Project Structure
+## 🏁 Final Benchmark Results
+
+| **Backbone**              | **NT-Xent Loss ↓** | **Avg. Cosine Sim ↑** | **Retrieval MRR ↑** | **Reranker Recall@10 ↑** |
+| ------------------------- | ------------------ | --------------------- | ------------------- | ------------------ |
+| GraphSAGE                 | 2.7589             | 0.8368                | 0.66                | 0.74               |
+| GCN                       | 5.5237             | 0.6302                | 0.58                | 0.65               |
+| GIN                       | 5.1312             | 0.7127                | 0.61                | 0.68               |
+| GAT                       | 4.9844             | 0.8132                | 0.64                | 0.72               |
+| 🚀 **GraphSeeker (Ours)** | **0.7450**         | **0.9564**            | **0.73**            | **0.81**           |
+
+> **MRR** = Mean Reciprocal Rank. Reranker supervised using **Δ = 0.05**.
+
+---
+
+## 🗂️ Project Structure
 
 ```
 GraphSeeker/
@@ -140,68 +167,53 @@ GraphSeeker/
 
 ---
 
-## ⚙️ Quickstart
+## 🚀 Quickstart
 
-### 1️⃣ Pretrain the Siamese Graph Transformer
+### 🔧 Train Encoder
 
 ```bash
 cd Siamese-Graphormer
 python train.py
 ```
 
-* Uses **in-batch NT-Xent loss**
-* Applies **DropEdge** and **FeatureMasking**
-* Saves embeddings to `embeddings/train_graph_embeddings.npy`
-* Automatically uses **GPU if available**
+* Stores graph embeddings in `Graph_Retriever/embeddings/`
 
-### 2️⃣ Run Hybrid Retrieval
+### 🔍 Run Retrieval + Reranking
 
 ```bash
-cd ../Graph_Retriever
-python get_similiar.py
+cd Graph_Retriever
+python network/hybrid_retrieval.py
 ```
 
-* Retrieves top-k candidates via FAISS
-* Reranks them using the GNN cross-encoder
+* Top-10 graphs retrieved using FAISS
+* Reranked using cross-attention GNN (Δ = 0.05)
 
 ---
 
-## 📊 Dataset: ZINC
+## 📦 Dataset: ZINC
 
-* Provided by **PyTorch Geometric**
-* Each graph represents a molecule with:
-
-  * Node features: atom types
-  * Edge features: bond types
-* Augmentations are applied **on-the-fly** during training
-
----
-
-## 📈 Training Logs
-
-We log the following metrics:
-
-* 📉 NT-Xent **contrastive loss**
-* 📈 Average **positive similarity** (final value: **0.96**)
-
-For deeper monitoring, integrate with **TensorBoard** or **Weights & Biases**.
+* Source: [PyTorch Geometric](https://pytorch-geometric.readthedocs.io/)
+* Contains graphs of organic molecules
+* Node features: atom types
+* Edge features: bond types
+* Dynamic augmentations applied during training
 
 ---
 
-## 🤝 Contributions Welcome
+## 🌱 Future Work & Contributions
 
-We're actively expanding this framework!
+We're actively improving GraphSeeker. Potential directions:
 
-### Ideas for contribution:
-
-* 📦 Add support for **larger molecular datasets**
-* ⚡ Speed up reranking with lightweight GNNs
-* 🔁 Add **text-conditioned graph retrieval**
-* 📊 Benchmark on **OGBG**, **QM9**, **PCQM4M**, etc.
+* 📈 Scale to **large molecular datasets** (e.g., PCQM4M, OGB-LSC)
+* ⚡ Accelerate reranking with lightweight GNNs
+* 🔁 Enable **text-conditioned** graph queries
+* 🧪 Evaluate on more tasks (drug discovery, molecule property prediction, etc.)
 
 ---
 
 ## 📜 License
 
-Distributed under the **MIT License**. See `LICENSE` for details.
+This project is licensed under the **MIT License**.
+See the `LICENSE` file for more details.
+
 
