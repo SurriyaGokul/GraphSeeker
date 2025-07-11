@@ -1,23 +1,25 @@
 import torch
-from torch_geometric.nn import GINConv, global_add_pool
+from torch_geometric.nn import GINEConv, global_add_pool
+import torch.nn as nn
 
 class CrossEncoderGNN(torch.nn.Module):
-    def __init__(self, node_dim, hidden_dim=128):
+    def __init__(self, node_dim, edge_dim, hidden_dim=128):
         super().__init__()
+
         self.gnn_layers = torch.nn.ModuleList([
-            GINConv(torch.nn.Linear(node_dim, hidden_dim)),
-            GINConv(torch.nn.Linear(hidden_dim, hidden_dim)),
+            GINEConv(nn=nn.Linear(node_dim, hidden_dim), edge_dim=edge_dim),
+            GINEConv(nn=nn.Linear(hidden_dim, hidden_dim), edge_dim=edge_dim)
         ])
-        self.classifier = torch.nn.Sequential(
+
+        self.regressor = torch.nn.Sequential(
             torch.nn.Linear(hidden_dim, hidden_dim // 2),
             torch.nn.ReLU(),
             torch.nn.Linear(hidden_dim // 2, 1)
         )
-    
-    def forward(self, joint_x, joint_edge_index, joint_batch):
-        h = joint_x
+
+    def forward(self, x, edge_index, edge_attr, batch):
+        h = x
         for gnn in self.gnn_layers:
-            h = gnn(h, joint_edge_index)
-        pooled = global_add_pool(h, joint_batch)
-        score = self.classifier(pooled)
-        return torch.sigmoid(score).squeeze(-1)
+            h = gnn(h, edge_index, edge_attr)
+        pooled = global_add_pool(h, batch)
+        return self.regressor(pooled).squeeze(-1) 

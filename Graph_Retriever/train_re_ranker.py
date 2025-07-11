@@ -1,128 +1,102 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch_geometric.datasets import ZINC
+from torch_geometric.data import DataLoader, Data
+import numpy as np
+import random
+import pickle
+import faiss
 import yaml
-from torch_geometric.data import Data, DataLoader
+from tqdm import tqdm
+from utils.atom_encoder import SimpleAtomEncoder
+
 from network.re_ranker import CrossEncoderGNN
 from network.hybrid_retrieval import HybridRetrievalSystem
-import numpy as np
-import faiss
-import random
-from typing import List
+from utils.graph_utils import preprocess_graph
 
-def build_joint_graph(q_data, c_data, label, add_cross_edges=True):
-    q_x = q_data.x
-    c_x = c_data.x
-    N_q = q_x.shape[0]
-    N_c = c_x.shape[0]
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+atom_encoder = SimpleAtomEncoder(emb_dim = 64).to(device)
 
-    joint_x = torch.cat([q_x, c_x], dim=0)
-    q_edge_index = q_data.edge_index
-    c_edge_index = c_data.edge_index + N_q
+# Joint graph builder
+def build_joint_graph(q_data, c_data, label_diff=None):
+    q_data, c_data = preprocess_graph(q_data), preprocess_graph(c_data)
+    N_q, N_c = q_data.num_nodes, c_data.num_nodes
 
-    joint_edge_index = torch.cat([q_edge_index, c_edge_index], dim=1)
+    x = torch.cat([q_data.x, c_data.x], dim=0)
+    edge_index = torch.cat([q_data.edge_index, c_data.edge_index + N_q], dim=1)
+    edge_attr = torch.cat([q_data.edge_attr, c_data.edge_attr], dim=0)
 
-    if add_cross_edges:
-        cross_edges = []
-        for q_node in range(N_q):
-            for c_node in range(N_c):
-                cross_edges.append([q_node, N_q + c_node])
-                cross_edges.append([N_q + c_node, q_node])
-        cross_edges = torch.tensor(cross_edges, dtype=torch.long).t().contiguous()
-        joint_edge_index = torch.cat([joint_edge_index, cross_edges], dim=1)
+    cross_edges = []
+    for i in range(N_q):
+        for j in range(N_c):
+            cross_edges.append([i, N_q + j])
+            cross_edges.append([N_q + j, i])
+    cross_edges = torch.tensor(cross_edges, dtype=torch.long).t()
+    edge_index = torch.cat([edge_index, cross_edges], dim=1)
 
-    joint_batch = torch.zeros(N_q + N_c, dtype=torch.long)
-    return Data(x=joint_x, edge_index=joint_edge_index, batch=joint_batch, y=torch.tensor([label], dtype=torch.float))
+    cross_attr = torch.zeros((cross_edges.size(1), edge_attr.size(1))) # Setting cross edges to zero
+    edge_attr = torch.cat([edge_attr, cross_attr], dim=0)
 
-def build_balanced_joint_dataset(graphs: List[Data], embeddings, labels, num_samples=1000):
-    system = HybridRetrievalSystem(embedding_dim=embeddings.shape[1])
-    faiss.normalize_L2(embeddings)
-    system.build_index(embeddings)
+    batch = torch.zeros(N_q + N_c, dtype=torch.long)
+    y = torch.tensor([label_diff], dtype=torch.float) if label_diff is not None else None
+    return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, batch=batch, y=y)
 
-    joint_graphs = []
-    pos_count = 0
-    neg_count = 0
-    max_each = num_samples // 2
+# Dataset for label difference regression
+def build_label_diff_dataset(graphs, labels, num_pairs=20000):
+    mean, std = np.mean(labels), np.std(labels)
+    norm_labels = (labels - mean) / std
+    print("Sample y values (normalized):", norm_labels[:10])
 
-    for i, query_graph in enumerate(graphs):
-        query_embedding = embeddings[i].reshape(1, -1)
-        retrieved_indices, _ = system.search(query_embedding)
+    pairs = []
+    for _ in tqdm(range(num_pairs), desc="Building pairs"):
+        i, j = random.sample(range(len(graphs)), 2)
+        label_diff = norm_labels[i] - norm_labels[j]
+        joint_graph = build_joint_graph(graphs[i], graphs[j], label_diff)
+        pairs.append(joint_graph)
+    return pairs
 
-        for idx in retrieved_indices:
-            if idx == i or idx >= len(graphs):
-                continue
-
-            label = 1 if labels[i] == labels[idx] else 0
-
-            # Balance condition
-            if label == 1 and pos_count >= max_each:
-                continue
-            if label == 0 and neg_count >= max_each:
-                continue
-
-            candidate_graph = graphs[idx]
-            joint_graph = build_joint_graph(query_graph, candidate_graph, label)
-            joint_graphs.append(joint_graph)
-
-            if label == 1:
-                pos_count += 1
-            else:
-                neg_count += 1
-
-            if pos_count >= max_each and neg_count >= max_each:
-                break
-
-        if len(joint_graphs) >= num_samples:
-            break
-
-    random.shuffle(joint_graphs)
-    return joint_graphs
-
-def train_re_ranker(model, train_loader, optimizer, criterion, device):
+def train_re_ranker(model, loader, optimizer, criterion, device, epochs):
     model.train()
-    total_loss = 0.0
-    for data in train_loader:
-        data = data.to(device)
-        optimizer.zero_grad()
-        outputs = model(data.x, data.edge_index, data.batch)
-        loss = criterion(outputs, data.y)
-        loss.backward()
-        optimizer.step()
-        total_loss += loss.item()
-    return total_loss / len(train_loader)
-
-def load_graph_dataset():
-    # This function should load your actual graph data objects
-    return torch.load("embeddings/graph_data.pt")  # Assuming graph objects are stored separately here
+    for epoch in range(epochs):
+        total_loss = 0.0
+        for data in loader:
+            data = data.to(device)
+            pred = model(data.x, data.edge_index, data.edge_attr, data.batch)
+            loss = criterion(pred, data.y.squeeze())
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total_loss += loss.item()
+        avg_loss = total_loss / len(loader)
+        print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
 if __name__ == "__main__":
-
     with open("Graph_Retriever/config/config.yaml", 'r') as f:
         config = yaml.safe_load(f)
 
-    epochs = config['RE_RANKER_EPOCHS']
-    batch_size = config['RE_RANKER_BATCH_SIZE']
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    epochs = config["RE_RANKER_EPOCHS"]
+    embedding_dim = config["EMBEDDING_DIM"]
+    batch_size = config["RE_RANKER_BATCH_SIZE"]
+    node_dim = 64 # This should match your atom encoder output dimension
 
-    # Load embeddings and the labels
-    data = torch.load("embeddings/graph_embeddings.pt")
-    embeddings = data['embeddings'].numpy().astype('float32')
-    labels = data['labels'].numpy().flatten()
+    graphs = list(ZINC(root='data/ZINC', subset=False, split='train'))
+    with open("embeddings/train_graph_embeddings.pkl", "rb") as f:
+        embedding_data = pickle.load(f)
 
-    # Load actual graph data objects
-    graphs = load_graph_dataset()
-    assert len(graphs) == len(labels), "Mismatch between number of graphs and labels"
+    embeddings = np.stack([v["embedding"] for v in embedding_data.values()]).astype("float32")
+    labels = np.array([v["label"] for v in embedding_data.values()])
+    assert len(graphs) == len(labels) # simple sanity check
 
-    # Building balanced train dataset
-    joint_graphs = build_balanced_joint_dataset(graphs, embeddings, labels, num_samples=2000)
-    train_loader = DataLoader(joint_graphs, batch_size=batch_size, shuffle=True)
+    dataset = build_label_diff_dataset(graphs, labels, num_pairs=2000)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Train re-ranker
-    model = CrossEncoderGNN(node_dim=128).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    criterion = torch.nn.BCELoss() # I am using it because the labels are binary (0 or 1), might need to change if you have different labels
+    model = CrossEncoderGNN(node_dim=node_dim, edge_dim=5).to(device)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+    criterion = nn.MSELoss()
 
-    for epoch in range(epochs):
-        loss = train_re_ranker(model, train_loader, optimizer, criterion, device)
-        print(f"Epoch {epoch+1}, Loss: {loss:.4f}")
+    print(f"\nTraining re-ranker model")
+    train_re_ranker(model, loader, optimizer, criterion, device, epochs)
 
-    torch.save(model.state_dict(), "reranker.pth") # Save the trained model for using in retrieval
-    print("Re-ranker training complete and model saved.")
+    torch.save(model.state_dict(), "checkpoints/reranker_labeldiff_regression.pth")
+    print("Model saved: reranker_labeldiff_regression.pth")
