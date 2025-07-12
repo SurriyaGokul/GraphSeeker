@@ -16,9 +16,9 @@ from network.hybrid_retrieval import HybridRetrievalSystem
 from utils.graph_utils import preprocess_graph
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-atom_encoder = SimpleAtomEncoder(emb_dim = 64).to(device)
+atom_encoder = SimpleAtomEncoder(emb_dim = 128).to(device)
 
-# Joint graph builder
+# Function to build joint graph for query and candidate with optional label difference
 def build_joint_graph(q_data, c_data, label_diff=None):
     q_data, c_data = preprocess_graph(q_data), preprocess_graph(c_data)
     N_q, N_c = q_data.num_nodes, c_data.num_nodes
@@ -35,19 +35,19 @@ def build_joint_graph(q_data, c_data, label_diff=None):
     cross_edges = torch.tensor(cross_edges, dtype=torch.long).t()
     edge_index = torch.cat([edge_index, cross_edges], dim=1)
 
-    cross_attr = torch.zeros((cross_edges.size(1), edge_attr.size(1))) # Setting cross edges to zero
+    cross_attr = torch.zeros((cross_edges.size(1), edge_attr.size(1)))
     edge_attr = torch.cat([edge_attr, cross_attr], dim=0)
 
     batch = torch.zeros(N_q + N_c, dtype=torch.long)
     y = torch.tensor([label_diff], dtype=torch.float) if label_diff is not None else None
     return Data(x=x, edge_index=edge_index, edge_attr=edge_attr, batch=batch, y=y)
 
-# Dataset for label difference regression
+# Function to build dataset of pairs with label differences
 def build_label_diff_dataset(graphs, labels, num_pairs=20000):
-    mean, std = np.mean(labels), np.std(labels)
-    norm_labels = (labels - mean) / std
-    print("Sample y values (normalized):", norm_labels[:10])
-
+    min_label = np.min(labels)
+    max_label = np.max(labels)
+    norm_labels = 2 * (labels - min_label) / (max_label - min_label) - 1
+    
     pairs = []
     for _ in tqdm(range(num_pairs), desc="Building pairs"):
         i, j = random.sample(range(len(graphs)), 2)
@@ -56,6 +56,7 @@ def build_label_diff_dataset(graphs, labels, num_pairs=20000):
         pairs.append(joint_graph)
     return pairs
 
+# Function to train the re-ranker model
 def train_re_ranker(model, loader, optimizer, criterion, device, epochs):
     model.train()
     for epoch in range(epochs):
@@ -71,14 +72,15 @@ def train_re_ranker(model, loader, optimizer, criterion, device, epochs):
         avg_loss = total_loss / len(loader)
         print(f"Epoch {epoch+1}/{epochs}, Loss: {avg_loss:.4f}")
 
+
 if __name__ == "__main__":
+    # Load configuration
     with open("Graph_Retriever/config/config.yaml", 'r') as f:
         config = yaml.safe_load(f)
 
-    epochs = config["RE_RANKER_EPOCHS"]
-    embedding_dim = config["EMBEDDING_DIM"]
-    batch_size = config["RE_RANKER_BATCH_SIZE"]
-    node_dim = 64 # This should match your atom encoder output dimension
+    epochs = 10
+    embedding_dim = 512
+    node_dim = 128
 
     graphs = list(ZINC(root='data/ZINC', subset=False, split='train'))
     with open("embeddings/train_graph_embeddings.pkl", "rb") as f:
@@ -88,14 +90,14 @@ if __name__ == "__main__":
     labels = np.array([v["label"] for v in embedding_data.values()])
     assert len(graphs) == len(labels) # simple sanity check
 
-    dataset = build_label_diff_dataset(graphs, labels, num_pairs=2000)
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    # Train model on regression of label difference
+    dataset = build_label_diff_dataset(graphs, labels, num_pairs=20000)
+    loader = DataLoader(dataset, batch_size=16, shuffle=True)
 
     model = CrossEncoderGNN(node_dim=node_dim, edge_dim=5).to(device)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
     criterion = nn.MSELoss()
 
-    print(f"\nTraining re-ranker model")
     train_re_ranker(model, loader, optimizer, criterion, device, epochs)
 
     torch.save(model.state_dict(), "checkpoints/reranker_labeldiff_regression.pth")
