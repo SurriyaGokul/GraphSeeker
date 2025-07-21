@@ -56,7 +56,7 @@ def train(epochs=10, lr=2e-3, batch_size=256, embeddings_dim=512):
         collate_fn=balanced_siamese_collate
     )
 
-    losses, pos_sims_epoch, neg_sims_epoch, aucs = [], [], [], []
+    losses, pos_sims_epoch, neg_sims_epoch = [], [], []
 
     for epoch in range(1, epochs + 1):
         siamese_net.train()
