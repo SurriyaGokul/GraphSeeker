@@ -73,7 +73,6 @@ def train(epochs=10, lr=2e-3, batch_size=256, embeddings_dim=512):
 
             sims = F.cosine_similarity(out1, out2)
             pos_sims = sims[label == 1]
-            neg_sims = sims[label == 0]
 
             loss = nt_xent_loss(out1, out2, temperature=0.1)
             optimizer.zero_grad()
@@ -87,21 +86,17 @@ def train(epochs=10, lr=2e-3, batch_size=256, embeddings_dim=512):
 
             loop.set_postfix(
                 loss=loss.item(),
-                pos_sim=pos_sims.mean().item() if len(pos_sims) else 0,
-                neg_sim=neg_sims.mean().item() if len(neg_sims) else 0
+                pos_sim=pos_sims.mean().item() if len(pos_sims) else 0
             )
 
         avg_loss = total_loss / len(loader)
         avg_pos = np.mean([x for i, x in enumerate(all_sims) if all_labels[i] == 1])
-        avg_neg = np.mean([x for i, x in enumerate(all_sims) if all_labels[i] == 0])
 
         losses.append(avg_loss)
         pos_sims_epoch.append(avg_pos)
-        neg_sims_epoch.append(avg_neg)
 
         print(f"\nEpoch {epoch}:")
         print(f"Avg Positive Similarity = {avg_pos:.4f}")
-        print(f"Avg Negative Similarity = {avg_neg:.4f}")
         print(f"Gradient Norm = {grad_norm:.4f}")
 
     # Save Model
@@ -109,7 +104,7 @@ def train(epochs=10, lr=2e-3, batch_size=256, embeddings_dim=512):
     print("\n Model saved at checkpoints/siamese_final.pt")
 
     # Save Metrics Plot
-    plot_metrics(losses, pos_sims_epoch, neg_sims_epoch, aucs)
+    plot_metrics(losses, pos_sims_epoch, neg_sims_epoch)
     print("Training curve saved at checkpoints/training_metrics.png")
 
     # Save Embeddings
