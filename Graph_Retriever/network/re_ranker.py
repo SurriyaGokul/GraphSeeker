@@ -10,22 +10,12 @@ class CrossEncoderGNN(torch.nn.Module):
         self.gnns = nn.ModuleList()
         self.bns = nn.ModuleList()
 
-        # First layer
-        edge_nn = nn.Sequential(
-            nn.Linear(edge_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim)
-        )
+        # Initial layer
         self.gnns.append(GINEConv(nn.Linear(node_dim, hidden_dim), edge_dim=edge_dim))
         self.bns.append(BatchNorm(hidden_dim))
 
         # Hidden layers
         for _ in range(num_layers - 1):
-            edge_nn = nn.Sequential(
-                nn.Linear(edge_dim, hidden_dim),
-                nn.ReLU(),
-                nn.Linear(hidden_dim, hidden_dim)
-            )
             self.gnns.append(GINEConv(nn.Linear(hidden_dim, hidden_dim), edge_dim=edge_dim))
             self.bns.append(BatchNorm(hidden_dim))
 
