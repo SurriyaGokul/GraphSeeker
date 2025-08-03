@@ -60,7 +60,7 @@ This allows the encoder to learn **structure-invariant**, task-agnostic represen
 **Stage 2: Cross-Attention GNN Reranker**
 
 * Builds a supergraph of query + retrieved graphs
-* Uses **joint message passing** with contrastive loss
+* Uses **joint message passing** with label regression MSE loss
 * Learns to semantically refine candidate scores
 
 ---
